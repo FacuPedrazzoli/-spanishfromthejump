@@ -15,34 +15,40 @@ class App {
     this.init();
   }
 
-  private async init(): Promise<void> {
+  private init(): void {
     this.renderComponents();
-    await this.waitForPayPal();
-    this.initPayPal();
+    this.initPayPalWithPolling();
     this.initWhatsApp();
     this.addScrollAnimations();
   }
 
-  private waitForPayPal(): Promise<void> {
-    return new Promise((resolve) => {
-      if (window.paypal) {
-        resolve();
+  /**
+   * Defensive PayPal initialization with polling mechanism
+   * Checks every 100ms for SDK availability, timeout after 10 seconds
+   */
+  private initPayPalWithPolling(): void {
+    const POLL_INTERVAL = 100; // Check every 100ms
+    const TIMEOUT = 10000; // Give up after 10 seconds
+    const startTime = Date.now();
+
+    const pollForPayPal = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+
+      // Timeout check
+      if (elapsed >= TIMEOUT) {
+        clearInterval(pollForPayPal);
+        console.error('❌ PayPal SDK failed to load within 10 seconds');
+        this.showPayPalError('PayPal SDK failed to load. Please refresh the page.');
         return;
       }
 
-      const checkPayPal = setInterval(() => {
-        if (window.paypal) {
-          clearInterval(checkPayPal);
-          resolve();
-        }
-      }, 100);
-
-      setTimeout(() => {
-        clearInterval(checkPayPal);
-        console.error('PayPal SDK failed to load within timeout');
-        resolve();
-      }, 10000);
-    });
+      // Check if PayPal SDK is loaded
+      if (window.paypal && typeof window.paypal.Buttons === 'function') {
+        clearInterval(pollForPayPal);
+        console.log('✅ PayPal SDK loaded successfully');
+        this.initPayPal();
+      }
+    }, POLL_INTERVAL);
   }
 
   private renderComponents(): void {
@@ -68,57 +74,65 @@ class App {
     this.appContainer.innerHTML = componentsHTML;
   }
 
+  /**
+   * Initialize PayPal buttons - Only called after SDK is confirmed loaded
+   */
   private initPayPal(): void {
+    // Step 1: Verify container exists in DOM
     const container = document.getElementById('paypal-button-container');
     
     if (!container) {
-      console.error('PayPal container not found');
+      console.error('❌ PayPal container #paypal-button-container not found in DOM');
       return;
     }
 
-    if (!window.paypal) {
-      console.error('PayPal SDK not loaded');
-      container.innerHTML = '<p style="color: red;">PayPal failed to load. Please refresh the page.</p>';
+    // Step 2: Double-check PayPal SDK is available
+    if (!window.paypal || typeof window.paypal.Buttons !== 'function') {
+      console.error('❌ PayPal SDK not available');
+      this.showPayPalError('PayPal SDK not loaded properly.');
       return;
     }
 
-    console.log('Initializing PayPal buttons...');
+    console.log('🔄 Initializing PayPal buttons...');
 
-    window.paypal.Buttons({
-      style: {
-        layout: 'vertical',
-        color: 'gold',
-        shape: 'rect',
-        label: 'paypal',
-        height: 45,
-      },
-      createOrder: (_data: any, actions: any) => {
-        return actions.order.create({
-          intent: 'CAPTURE',
-          purchase_units: [{
-            amount: {
-              value: '20.00',
-              currency_code: 'USD',
+    try {
+      window.paypal.Buttons({
+        style: {
+          layout: 'vertical',
+          color: 'gold',
+          shape: 'rect',
+          label: 'pay',
+          height: 45,
+        },
+        
+        createOrder: async (_data, actions) => {
+          return actions.order.create({
+            intent: 'CAPTURE',
+            purchase_units: [{
+              amount: {
+                value: '20.00',
+                currency_code: 'USD',
+              },
+              description: 'Spanish from the Jump - Class Session',
+            }],
+            application_context: {
+              shipping_preference: 'NO_SHIPPING',
             },
-            description: 'Spanish from the Jump - Class Session',
-          }],
-          application_context: {
-            shipping_preference: 'NO_SHIPPING',
-          },
-        });
-      },
-      onApprove: async (_data: any, actions: any) => {
-        try {
-          const order = await actions.order.capture();
-          console.log('Payment successful:', order);
-          
-          const transactionId = order.purchase_units[0]?.payments?.captures[0]?.id || 'N/A';
-          
-          alert('Payment successful! Welcome to the class.');
-          
-          const container = document.getElementById('paypal-button-container');
-          if (container) {
-            container.innerHTML = `
+          });
+        },
+        
+        onApprove: async (_data, actions) => {
+          try {
+            const order = await actions.order.capture();
+            console.log('✅ Payment captured successfully:', order);
+            
+            const transactionId = order.purchase_units[0]?.payments?.captures[0]?.id || 'N/A';
+            
+            // Success alert
+            alert('🎉 Payment successful! Welcome to Spanish from the Jump!');
+            
+            // Replace buttons with success message
+            const successHTML = `
               <div class="payment-success">
                 <h3>✓ Payment Successful!</h3>
                 <p>Thank you for enrolling in Spanish from the Jump!</p>
@@ -126,29 +140,60 @@ class App {
                 <p>You'll receive a confirmation email shortly.</p>
               </div>
             `;
+            
+            if (container) {
+              container.innerHTML = successHTML;
+            }
+          } catch (error) {
+            console.error('❌ Error capturing payment:', error);
+            alert('There was an error processing your payment. Please try again or contact support.');
           }
-        } catch (error) {
-          console.error('Error capturing order:', error);
-          alert('There was an error processing your payment. Please try again.');
-        }
-      },
-      onError: (err: any) => {
-        console.error('PayPal error:', err);
-        alert('An error occurred with PayPal. Please try again later.');
-      },
-      onCancel: () => {
-        console.log('Payment cancelled by user');
-      },
-    }).render('#paypal-button-container')
-      .then(() => {
-        console.log('PayPal buttons rendered successfully');
-      })
-      .catch((error: any) => {
-        console.error('Failed to render PayPal buttons:', error);
-        if (container) {
-          container.innerHTML = '<p style="color: red;">Failed to load PayPal buttons. Please refresh the page.</p>';
-        }
-      });
+        },
+        
+        onError: (err) => {
+          console.error('❌ PayPal Button Error:', err);
+          alert('An error occurred with PayPal. Please refresh the page and try again.');
+        },
+        
+        onCancel: (data) => {
+          console.log('⚠️ Payment cancelled by user:', data);
+        },
+        
+      }).render('#paypal-button-container')
+        .then(() => {
+          console.log('✅ PayPal buttons rendered successfully');
+        })
+        .catch((error) => {
+          console.error('❌ Failed to render PayPal buttons:', error);
+          this.showPayPalError('Failed to render payment buttons.');
+        });
+        
+    } catch (error) {
+      console.error('❌ Exception during PayPal initialization:', error);
+      this.showPayPalError('PayPal initialization failed.');
+    }
+  }
+
+  /**
+   * Display error message in PayPal container
+   */
+  private showPayPalError(message: string): void {
+    const container = document.getElementById('paypal-button-container');
+    if (container) {
+      container.innerHTML = `
+        <div class="payment-error">
+          <p style="color: #dc2626; text-align: center; padding: 1rem;">
+            ⚠️ ${message}
+          </p>
+          <button 
+            onclick="location.reload()" 
+            style="display: block; margin: 1rem auto; padding: 0.5rem 1rem; background: #2563eb; color: white; border: none; border-radius: 0.5rem; cursor: pointer;"
+          >
+            Refresh Page
+          </button>
+        </div>
+      `;
+    }
   }
 
   private initWhatsApp(): void {
