@@ -9,9 +9,7 @@
     "preview": "vite preview",
     "type-check": "tsc --noEmit"
   },
-  "dependencies": {
-    "@paypal/paypal-js": "^7.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.3.3",
     "vite": "^5.0.11"

@@ -9,3 +9,11 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface Window {
+  paypal?: {
+    Buttons: (config: any) => {
+      render: (selector: string) => Promise<void>;
+    };
+  };
+}

@@ -3,10 +3,9 @@ import { MethodologyComponent } from './components/Methodology';
 import { MorphologyComponent } from './components/Morphology';
 import { WordDetectiveComponent } from './components/WordDetective';
 import { EtymologyComponent } from './components/Etymology';
-import { PayPalIntegration } from './utils/paypal';
 import { WhatsAppButton } from './utils/whatsapp';
 import { landingPageContent } from './data/content';
-import type { PayPalConfig, WhatsAppConfig } from './types/interfaces';
+import type { WhatsAppConfig } from './types/interfaces';
 
 class App {
   private appContainer: HTMLElement | null;
@@ -47,21 +46,67 @@ class App {
   }
 
   private initPayPal(): void {
-    const paypalConfig: PayPalConfig = {
-      clientId: import.meta.env.VITE_PAYPAL_CLIENT_ID || 'test',
-      currency: 'USD',
-      intent: 'capture',
-    };
-
-    const paypal = new PayPalIntegration(paypalConfig);
-    
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        paypal.init();
-      });
-    } else {
-      paypal.init();
+    if (!window.paypal) {
+      console.error('PayPal SDK not loaded');
+      return;
     }
+
+    window.paypal.Buttons({
+      style: {
+        layout: 'vertical',
+        color: 'gold',
+        shape: 'rect',
+        label: 'paypal',
+        height: 45,
+      },
+      createOrder: (_data: any, actions: any) => {
+        return actions.order.create({
+          intent: 'CAPTURE',
+          purchase_units: [{
+            amount: {
+              value: '20.00',
+              currency_code: 'USD',
+            },
+            description: 'Spanish from the Jump - Class Session',
+          }],
+          application_context: {
+            shipping_preference: 'NO_SHIPPING',
+          },
+        });
+      },
+      onApprove: async (_data: any, actions: any) => {
+        try {
+          const order = await actions.order.capture();
+          console.log('Payment successful:', order);
+          
+          const transactionId = order.purchase_units[0]?.payments?.captures[0]?.id || 'N/A';
+          
+          alert('Payment successful! Welcome to the class.');
+          
+          const container = document.getElementById('paypal-button-container');
+          if (container) {
+            container.innerHTML = `
+              <div class="payment-success">
+                <h3>✓ Payment Successful!</h3>
+                <p>Thank you for enrolling in Spanish from the Jump!</p>
+                <p class="transaction-id">Transaction ID: ${transactionId}</p>
+                <p>You'll receive a confirmation email shortly.</p>
+              </div>
+            `;
+          }
+        } catch (error) {
+          console.error('Error capturing order:', error);
+          alert('There was an error processing your payment. Please try again.');
+        }
+      },
+      onError: (err: any) => {
+        console.error('PayPal error:', err);
+        alert('An error occurred with PayPal. Please try again later.');
+      },
+      onCancel: () => {
+        console.log('Payment cancelled by user');
+      },
+    }).render('#paypal-button-container');
   }
 
   private initWhatsApp(): void {
