@@ -15,11 +15,34 @@ class App {
     this.init();
   }
 
-  private init(): void {
+  private async init(): Promise<void> {
     this.renderComponents();
+    await this.waitForPayPal();
     this.initPayPal();
     this.initWhatsApp();
     this.addScrollAnimations();
+  }
+
+  private waitForPayPal(): Promise<void> {
+    return new Promise((resolve) => {
+      if (window.paypal) {
+        resolve();
+        return;
+      }
+
+      const checkPayPal = setInterval(() => {
+        if (window.paypal) {
+          clearInterval(checkPayPal);
+          resolve();
+        }
+      }, 100);
+
+      setTimeout(() => {
+        clearInterval(checkPayPal);
+        console.error('PayPal SDK failed to load within timeout');
+        resolve();
+      }, 10000);
+    });
   }
 
   private renderComponents(): void {
@@ -46,10 +69,20 @@ class App {
   }
 
   private initPayPal(): void {
-    if (!window.paypal) {
-      console.error('PayPal SDK not loaded');
+    const container = document.getElementById('paypal-button-container');
+    
+    if (!container) {
+      console.error('PayPal container not found');
       return;
     }
+
+    if (!window.paypal) {
+      console.error('PayPal SDK not loaded');
+      container.innerHTML = '<p style="color: red;">PayPal failed to load. Please refresh the page.</p>';
+      return;
+    }
+
+    console.log('Initializing PayPal buttons...');
 
     window.paypal.Buttons({
       style: {
@@ -106,7 +139,16 @@ class App {
       onCancel: () => {
         console.log('Payment cancelled by user');
       },
-    }).render('#paypal-button-container');
+    }).render('#paypal-button-container')
+      .then(() => {
+        console.log('PayPal buttons rendered successfully');
+      })
+      .catch((error: any) => {
+        console.error('Failed to render PayPal buttons:', error);
+        if (container) {
+          container.innerHTML = '<p style="color: red;">Failed to load PayPal buttons. Please refresh the page.</p>';
+        }
+      });
   }
 
   private initWhatsApp(): void {
